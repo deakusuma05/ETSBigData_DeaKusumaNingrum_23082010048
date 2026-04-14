@@ -1,0 +1,228 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+from PIL import Image
+import os
+
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+
+# =========================
+# CONFIG
+# =========================
+st.set_page_config(
+    page_title='DANA Sentiment Dashboard',
+    page_icon='📊',
+    layout='wide'
+)
+
+DANA_BLUE = '#1C85C7'
+
+# =========================
+# LOAD DATA
+# =========================
+@st.cache_data
+def load_data():
+    return pd.read_csv('df_combined_final.csv')
+
+df = load_data()
+
+# =========================
+# PREPROCESS
+# =========================
+df['at'] = pd.to_datetime(df['at'])
+
+# =========================
+# SIDEBAR
+# =========================
+logo_path = 'logo dana.png'
+if os.path.exists(logo_path):
+    st.sidebar.image(Image.open(logo_path), width=180)
+
+st.sidebar.title("🎛️ Filters")
+
+# DATE FILTER
+min_date = df['at'].min()
+max_date = df['at'].max()
+
+date_range = st.sidebar.date_input(
+    "📅 Select Date Range",
+    [min_date, max_date]
+)
+
+# SENTIMENT FILTER
+selected_sentiments = st.sidebar.multiselect(
+    '😊 Sentiment',
+    options=sorted(df['sentimen'].unique()),
+    default=df['sentimen'].unique()
+)
+
+# CRITICAL FILTER
+show_critical = st.sidebar.checkbox("⚠️ Show Only Critical Reviews (Rating ≤ 2)")
+
+# APPLY FILTER
+df_filtered = df[df['sentimen'].isin(selected_sentiments)]
+
+if len(date_range) == 2:
+    start_date, end_date = date_range
+    df_filtered = df_filtered[
+        (df_filtered['at'] >= pd.to_datetime(start_date)) &
+        (df_filtered['at'] <= pd.to_datetime(end_date))
+    ]
+
+if show_critical:
+    df_filtered = df_filtered[df_filtered['score'] <= 2]
+
+# =========================
+# HEADER
+# =========================
+st.markdown(f"""
+<div style='background-color:{DANA_BLUE};padding:15px;border-radius:10px'>
+<h1 style='color:white;text-align:center;'>DANA App Health Monitoring Dashboard</h1>
+</div>
+""", unsafe_allow_html=True)
+
+# =========================
+# KPI SECTION
+# =========================
+st.subheader("📌 Key Performance Indicators")
+
+total_reviews = len(df_filtered)
+avg_rating = df_filtered['score'].mean() if total_reviews > 0 else 0
+
+positive_rate = (df_filtered['sentimen'] == 'positif').mean() * 100 if total_reviews > 0 else 0
+negative_rate = (df_filtered['sentimen'] == 'negatif').mean() * 100 if total_reviews > 0 else 0
+
+critical_rate = df_filtered[df_filtered['score'] <= 2].shape[0] / total_reviews * 100 if total_reviews > 0 else 0
+
+col1, col2, col3, col4 = st.columns(4)
+
+col1.metric("Total Reviews", f"{total_reviews:,}")
+col2.metric("Avg Rating ⭐", f"{avg_rating:.2f}", delta="Target > 4.0", delta_color="inverse")
+col3.metric("Positive Rate 😊", f"{positive_rate:.2f}%", delta="Target > 80%", delta_color="inverse")
+col4.metric("Critical Rate 🚨", f"{critical_rate:.2f}%", delta="Target < 10%", delta_color="inverse")
+
+# =========================
+# VISUAL SECTION
+# =========================
+st.markdown('---')
+st.subheader("📊 Sentiment Insights")
+
+col1, col2 = st.columns(2)
+
+# DONUT
+with col1:
+    sentiment_counts = df_filtered['sentimen'].value_counts().reset_index()
+    sentiment_counts.columns = ['Sentimen', 'Jumlah']
+
+    fig = px.pie(
+        sentiment_counts,
+        values='Jumlah',
+        names='Sentimen',
+        hole=0.5,
+        color='Sentimen',
+        color_discrete_map={
+            'positif': '#28A745',
+            'negatif': '#DC3545',
+            'netral': '#FFC107'
+        }
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# STACKED BAR
+with col2:
+    rating_sent = df_filtered.groupby(['score', 'sentimen']).size().reset_index(name='count')
+    rating_sent['prop'] = rating_sent.groupby('score')['count'].transform(lambda x: x / x.sum())
+
+    fig2 = px.bar(
+        rating_sent,
+        x='score',
+        y='prop',
+        color='sentimen',
+        barmode='stack',
+        color_discrete_map={
+            'positif': '#28A745',
+            'negatif': '#DC3545',
+            'netral': '#FFC107'
+        }
+    )
+    st.plotly_chart(fig2, use_container_width=True)
+
+# =========================
+# CRITICAL ISSUE
+# =========================
+st.markdown('---')
+st.subheader("🔥 Critical Issues Monitoring")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    saldo_hilang = df_filtered['content'].str.contains('saldo hilang', case=False, na=False).sum()
+    premium_issue = df_filtered['content'].str.contains('premium', case=False, na=False).sum()
+
+    st.error(f"🚨 'Saldo Hilang': {saldo_hilang}")
+    st.warning(f"🛠️ 'Premium Issue': {premium_issue}")
+
+with col2:
+    st.info("""
+    📉 Insight:
+    - 'Saldo hilang' → trust issue
+    - 'Premium' → monetization friction
+    - Perlu prioritas penanganan 🚀
+    """)
+
+# =========================
+# PREDICTIVE
+# =========================
+st.markdown('---')
+st.subheader("🤖 Predictive Analytics")
+
+tab1, tab2 = st.tabs(["Sentiment Model", "Churn Prediction"])
+
+# SENTIMENT MODEL
+with tab1:
+    X = df['content']
+    y = df['sentimen']
+
+    tfidf = TfidfVectorizer(max_features=3000)
+    X_vec = tfidf.fit_transform(X)
+
+    X_train, X_test, y_train, y_test = train_test_split(X_vec, y, test_size=0.2)
+
+    model = MultinomialNB()
+    model.fit(X_train, y_train)
+
+    acc = accuracy_score(y_test, model.predict(X_test))
+    st.metric("Accuracy Model", f"{acc:.2f}")
+
+# CHURN MODEL
+with tab2:
+    df['churn'] = df['score'].apply(lambda x: 1 if x <= 2 else 0)
+
+    X = df['content']
+    y = df['churn']
+
+    tfidf = TfidfVectorizer(max_features=3000)
+    X_vec = tfidf.fit_transform(X)
+
+    X_train, X_test, y_train, y_test = train_test_split(X_vec, y, test_size=0.2)
+
+    model = LogisticRegression()
+    model.fit(X_train, y_train)
+
+    acc = accuracy_score(y_test, model.predict(X_test))
+    st.metric("Churn Model Accuracy", f"{acc:.2f}")
+
+# =========================
+# DATA TABLE
+# =========================
+st.markdown('---')
+st.subheader("📋 Filtered Review Data")
+
+st.dataframe(
+    df_filtered[['userName', 'score', 'at', 'content', 'sentimen']].head(100),
+    use_container_width=True
+)
