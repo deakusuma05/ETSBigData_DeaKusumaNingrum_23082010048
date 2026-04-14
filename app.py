@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-from PIL import Image
-import os
+import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -15,11 +13,8 @@ from sklearn.metrics import accuracy_score
 # =========================
 st.set_page_config(
     page_title='DANA Sentiment Dashboard',
-    page_icon='📊',
     layout='wide'
 )
-
-DANA_BLUE = '#1C85C7'
 
 # =========================
 # LOAD DATA
@@ -33,15 +28,11 @@ df = load_data()
 # =========================
 # PREPROCESS
 # =========================
-df['at'] = pd.to_datetime(df['at'])
+df['at'] = pd.to_datetime(df['at'], errors='coerce')
 
 # =========================
 # SIDEBAR
 # =========================
-logo_path = 'logo dana.png'
-if os.path.exists(logo_path):
-    st.sidebar.image(Image.open(logo_path), width=180)
-
 st.sidebar.title("🎛️ Filters")
 
 # DATE FILTER
@@ -56,12 +47,12 @@ date_range = st.sidebar.date_input(
 # SENTIMENT FILTER
 selected_sentiments = st.sidebar.multiselect(
     '😊 Sentiment',
-    options=sorted(df['sentimen'].unique()),
-    default=df['sentimen'].unique()
+    options=sorted(df['sentimen'].dropna().unique()),
+    default=df['sentimen'].dropna().unique()
 )
 
 # CRITICAL FILTER
-show_critical = st.sidebar.checkbox("⚠️ Show Only Critical Reviews (Rating ≤ 2)")
+show_critical = st.sidebar.checkbox("⚠️ Show Only Critical (Rating ≤ 2)")
 
 # APPLY FILTER
 df_filtered = df[df['sentimen'].isin(selected_sentiments)]
@@ -79,150 +70,99 @@ if show_critical:
 # =========================
 # HEADER
 # =========================
-st.markdown(f"""
-<div style='background-color:{DANA_BLUE};padding:15px;border-radius:10px'>
-<h1 style='color:white;text-align:center;'>DANA App Health Monitoring Dashboard</h1>
-</div>
-""", unsafe_allow_html=True)
+st.title("📊 DANA App Sentiment Monitoring Dashboard")
 
 # =========================
-# KPI SECTION
+# KPI
 # =========================
 st.subheader("📌 Key Performance Indicators")
 
-total_reviews = len(df_filtered)
-avg_rating = df_filtered['score'].mean() if total_reviews > 0 else 0
+total = len(df_filtered)
+avg_rating = df_filtered['score'].mean() if total > 0 else 0
 
-positive_rate = (df_filtered['sentimen'] == 'positif').mean() * 100 if total_reviews > 0 else 0
-negative_rate = (df_filtered['sentimen'] == 'negatif').mean() * 100 if total_reviews > 0 else 0
+positive = (df_filtered['sentimen'] == 'positif').mean() * 100 if total > 0 else 0
+critical = df_filtered[df_filtered['score'] <= 2].shape[0] / total * 100 if total > 0 else 0
 
-critical_rate = df_filtered[df_filtered['score'] <= 2].shape[0] / total_reviews * 100 if total_reviews > 0 else 0
+c1, c2, c3, c4 = st.columns(4)
 
-col1, col2, col3, col4 = st.columns(4)
-
-col1.metric("Total Reviews", f"{total_reviews:,}")
-col2.metric("Avg Rating ⭐", f"{avg_rating:.2f}", delta="Target > 4.0", delta_color="inverse")
-col3.metric("Positive Rate 😊", f"{positive_rate:.2f}%", delta="Target > 80%", delta_color="inverse")
-col4.metric("Critical Rate 🚨", f"{critical_rate:.2f}%", delta="Target < 10%", delta_color="inverse")
+c1.metric("Total Reviews", f"{total:,}")
+c2.metric("Avg Rating ⭐", f"{avg_rating:.2f}")
+c3.metric("Positive Rate 😊", f"{positive:.2f}%")
+c4.metric("Critical Rate 🚨", f"{critical:.2f}%")
 
 # =========================
-# VISUAL SECTION
+# VISUAL
 # =========================
-st.markdown('---')
-st.subheader("📊 Sentiment Insights")
+st.markdown("---")
+st.subheader("📊 Sentiment Distribution")
 
-col1, col2 = st.columns(2)
+sent_counts = df_filtered['sentimen'].value_counts()
 
-# DONUT
-with col1:
-    sentiment_counts = df_filtered['sentimen'].value_counts().reset_index()
-    sentiment_counts.columns = ['Sentimen', 'Jumlah']
+fig1, ax1 = plt.subplots()
+ax1.pie(sent_counts, labels=sent_counts.index, autopct='%1.1f%%')
+st.pyplot(fig1)
 
-    fig = px.pie(
-        sentiment_counts,
-        values='Jumlah',
-        names='Sentimen',
-        hole=0.5,
-        color='Sentimen',
-        color_discrete_map={
-            'positif': '#28A745',
-            'negatif': '#DC3545',
-            'netral': '#FFC107'
-        }
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
+# =========================
 # STACKED BAR
-with col2:
-    rating_sent = df_filtered.groupby(['score', 'sentimen']).size().reset_index(name='count')
-    rating_sent['prop'] = rating_sent.groupby('score')['count'].transform(lambda x: x / x.sum())
+# =========================
+st.subheader("📊 Sentiment per Rating")
 
-    fig2 = px.bar(
-        rating_sent,
-        x='score',
-        y='prop',
-        color='sentimen',
-        barmode='stack',
-        color_discrete_map={
-            'positif': '#28A745',
-            'negatif': '#DC3545',
-            'netral': '#FFC107'
-        }
-    )
-    st.plotly_chart(fig2, use_container_width=True)
+grouped = df_filtered.groupby(['score', 'sentimen']).size().unstack().fillna(0)
+grouped.plot(kind='bar', stacked=True)
+
+fig2 = plt.gcf()
+st.pyplot(fig2)
 
 # =========================
 # CRITICAL ISSUE
 # =========================
-st.markdown('---')
-st.subheader("🔥 Critical Issues Monitoring")
+st.markdown("---")
+st.subheader("🔥 Critical Issues")
 
-col1, col2 = st.columns(2)
+saldo = df_filtered['content'].str.contains('saldo hilang', case=False, na=False).sum()
+premium = df_filtered['content'].str.contains('premium', case=False, na=False).sum()
 
-with col1:
-    saldo_hilang = df_filtered['content'].str.contains('saldo hilang', case=False, na=False).sum()
-    premium_issue = df_filtered['content'].str.contains('premium', case=False, na=False).sum()
-
-    st.error(f"🚨 'Saldo Hilang': {saldo_hilang}")
-    st.warning(f"🛠️ 'Premium Issue': {premium_issue}")
-
-with col2:
-    st.info("""
-    📉 Insight:
-    - 'Saldo hilang' → trust issue
-    - 'Premium' → monetization friction
-    - Perlu prioritas penanganan 🚀
-    """)
+st.write(f"🚨 'Saldo hilang': {saldo}")
+st.write(f"🛠️ 'Premium issue': {premium}")
 
 # =========================
 # PREDICTIVE
 # =========================
-st.markdown('---')
+st.markdown("---")
 st.subheader("🤖 Predictive Analytics")
 
-tab1, tab2 = st.tabs(["Sentiment Model", "Churn Prediction"])
-
 # SENTIMENT MODEL
-with tab1:
-    X = df['content']
-    y = df['sentimen']
+X = df['content'].astype(str)
+y = df['sentimen']
 
-    tfidf = TfidfVectorizer(max_features=3000)
-    X_vec = tfidf.fit_transform(X)
+tfidf = TfidfVectorizer(max_features=2000)
+X_vec = tfidf.fit_transform(X)
 
-    X_train, X_test, y_train, y_test = train_test_split(X_vec, y, test_size=0.2)
+X_train, X_test, y_train, y_test = train_test_split(X_vec, y, test_size=0.2)
 
-    model = MultinomialNB()
-    model.fit(X_train, y_train)
+model_nb = MultinomialNB()
+model_nb.fit(X_train, y_train)
 
-    acc = accuracy_score(y_test, model.predict(X_test))
-    st.metric("Accuracy Model", f"{acc:.2f}")
+acc1 = accuracy_score(y_test, model_nb.predict(X_test))
+st.write(f"Naive Bayes Accuracy: {acc1:.2f}")
 
 # CHURN MODEL
-with tab2:
-    df['churn'] = df['score'].apply(lambda x: 1 if x <= 2 else 0)
+df['churn'] = df['score'].apply(lambda x: 1 if x <= 2 else 0)
 
-    X = df['content']
-    y = df['churn']
+y2 = df['churn']
 
-    tfidf = TfidfVectorizer(max_features=3000)
-    X_vec = tfidf.fit_transform(X)
+X_train, X_test, y_train, y_test = train_test_split(X_vec, y2, test_size=0.2)
 
-    X_train, X_test, y_train, y_test = train_test_split(X_vec, y, test_size=0.2)
+model_lr = LogisticRegression(max_iter=1000)
+model_lr.fit(X_train, y_train)
 
-    model = LogisticRegression()
-    model.fit(X_train, y_train)
-
-    acc = accuracy_score(y_test, model.predict(X_test))
-    st.metric("Churn Model Accuracy", f"{acc:.2f}")
+acc2 = accuracy_score(y_test, model_lr.predict(X_test))
+st.write(f"Churn Model Accuracy: {acc2:.2f}")
 
 # =========================
-# DATA TABLE
+# DATA
 # =========================
-st.markdown('---')
-st.subheader("📋 Filtered Review Data")
+st.markdown("---")
+st.subheader("📋 Data Preview")
 
-st.dataframe(
-    df_filtered[['userName', 'score', 'at', 'content', 'sentimen']].head(100),
-    use_container_width=True
-)
+st.dataframe(df_filtered[['userName', 'score', 'at', 'content', 'sentimen']].head(50))
