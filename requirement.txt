@@ -1,7 +1,4 @@
 streamlit
 pandas
-plotly
 matplotlib
-wordcloud
-pillow
-
+scikit-learn
