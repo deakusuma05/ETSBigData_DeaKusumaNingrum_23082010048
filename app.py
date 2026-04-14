@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+import matplotlib.pyplot as plt
 from PIL import Image
 import os
 
@@ -17,7 +17,6 @@ DANA_BLUE = '#1C85C7'
 # 2. Data Loading
 @st.cache_data
 def load_data():
-    # Load the processed combined dataset
     df = pd.read_csv('/content/df_combined_final.csv')
     return df
 
@@ -82,32 +81,48 @@ vis_col1, vis_col2 = st.columns(2)
 
 with vis_col1:
     st.write('**Overall Sentiment Distribution (Donut Chart)**')
-    # Distribution data derived from analysis
+
     sent_dist = pd.DataFrame({
         'Label': ['Positif', 'Negatif', 'Netral'],
         'Value': [54.58, 33.20, 12.22]
     })
-    fig_donut = px.pie(
-        sent_dist, values='Value', names='Label', hole=0.5,
-        color='Label', color_discrete_map={'Positif': '#28A745', 'Negatif': '#DC3545', 'Netral': '#FFC107'}
+
+    fig1, ax1 = plt.subplots()
+    wedges, texts, autotexts = ax1.pie(
+        sent_dist['Value'],
+        labels=sent_dist['Label'],
+        autopct='%1.1f%%',
+        startangle=90
     )
-    fig_donut.update_layout(margin=dict(t=20, b=20, l=0, r=0))
-    st.plotly_chart(fig_donut, use_container_width=True)
+
+    # bikin donut (lubang tengah)
+    centre_circle = plt.Circle((0,0),0.70,fc='white')
+    fig1.gca().add_artist(centre_circle)
+
+    ax1.axis('equal')
+    st.pyplot(fig1)
 
 with vis_col2:
     st.write('**Sentiment Proportion per Rating (Stacked Bar)**')
-    # Proportions data based on previous groupby results
+
     rating_prop = pd.DataFrame({
         'Rating': ['1', '2', '3', '4', '5'] * 3,
         'Sentimen': ['Negatif']*5 + ['Netral']*5 + ['Positif']*5,
-        'Proportion': [0.74, 0.63, 0.42, 0.23, 0.15, 0.20, 0.25, 0.24, 0.11, 0.07, 0.06, 0.12, 0.34, 0.66, 0.78]
+        'Proportion': [0.74, 0.63, 0.42, 0.23, 0.15,
+                       0.20, 0.25, 0.24, 0.11, 0.07,
+                       0.06, 0.12, 0.34, 0.66, 0.78]
     })
-    fig_stacked = px.bar(
-        rating_prop, x='Rating', y='Proportion', color='Sentimen',
-        color_discrete_map={'Positif': '#28A745', 'Negatif': '#DC3545', 'Netral': '#FFC107'},
-        barmode='stack'
-    )
-    st.plotly_chart(fig_stacked, use_container_width=True)
+
+    pivot_df = rating_prop.pivot(index='Rating', columns='Sentimen', values='Proportion')
+
+    fig2, ax2 = plt.subplots()
+    pivot_df.plot(kind='bar', stacked=True, ax=ax2)
+
+    ax2.set_ylabel('Proportion')
+    ax2.set_xlabel('Rating')
+    ax2.legend(title='Sentimen')
+
+    st.pyplot(fig2)
 
 # 7. Critical Issue Tracking & Churn Risk
 st.markdown('---')
