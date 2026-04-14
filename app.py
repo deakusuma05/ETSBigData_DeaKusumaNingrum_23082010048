@@ -79,48 +79,53 @@ st.markdown('---')
 st.subheader('Sentiment Analysis Visualizations')
 vis_col1, vis_col2 = st.columns(2)
 
+# === DONUT CHART (Matplotlib) ===
 with vis_col1:
     st.write('**Overall Sentiment Distribution (Donut Chart)**')
 
-    sent_dist = pd.DataFrame({
-        'Label': ['Positif', 'Negatif', 'Netral'],
-        'Value': [54.58, 33.20, 12.22]
-    })
+    labels = ['Positif', 'Negatif', 'Netral']
+    sizes = [54.58, 33.20, 12.22]
+    colors = ['#28A745', '#DC3545', '#FFC107']
 
     fig1, ax1 = plt.subplots()
     wedges, texts, autotexts = ax1.pie(
-        sent_dist['Value'],
-        labels=sent_dist['Label'],
+        sizes,
+        labels=labels,
         autopct='%1.1f%%',
-        startangle=90
+        startangle=90,
+        colors=colors
     )
 
-    # bikin donut (lubang tengah)
-    centre_circle = plt.Circle((0,0),0.70,fc='white')
+    # Donut effect
+    centre_circle = plt.Circle((0, 0), 0.70, fc='white')
     fig1.gca().add_artist(centre_circle)
 
     ax1.axis('equal')
     st.pyplot(fig1)
 
+# === STACKED BAR CHART ===
 with vis_col2:
     st.write('**Sentiment Proportion per Rating (Stacked Bar)**')
 
     rating_prop = pd.DataFrame({
-        'Rating': ['1', '2', '3', '4', '5'] * 3,
-        'Sentimen': ['Negatif']*5 + ['Netral']*5 + ['Positif']*5,
-        'Proportion': [0.74, 0.63, 0.42, 0.23, 0.15,
-                       0.20, 0.25, 0.24, 0.11, 0.07,
-                       0.06, 0.12, 0.34, 0.66, 0.78]
+        'Rating': ['1', '2', '3', '4', '5'],
+        'Negatif': [0.74, 0.63, 0.42, 0.23, 0.15],
+        'Netral': [0.20, 0.25, 0.24, 0.11, 0.07],
+        'Positif': [0.06, 0.12, 0.34, 0.66, 0.78]
     })
 
-    pivot_df = rating_prop.pivot(index='Rating', columns='Sentimen', values='Proportion')
-
     fig2, ax2 = plt.subplots()
-    pivot_df.plot(kind='bar', stacked=True, ax=ax2)
 
-    ax2.set_ylabel('Proportion')
+    ax2.bar(rating_prop['Rating'], rating_prop['Negatif'], label='Negatif', color='#DC3545')
+    ax2.bar(rating_prop['Rating'], rating_prop['Netral'],
+            bottom=rating_prop['Negatif'], label='Netral', color='#FFC107')
+    ax2.bar(rating_prop['Rating'], rating_prop['Positif'],
+            bottom=rating_prop['Negatif'] + rating_prop['Netral'],
+            label='Positif', color='#28A745')
+
     ax2.set_xlabel('Rating')
-    ax2.legend(title='Sentimen')
+    ax2.set_ylabel('Proportion')
+    ax2.legend()
 
     st.pyplot(fig2)
 
